@@ -5,6 +5,8 @@ from appearance import apply_theme, load_theme, save_theme
 from engine import BAND_NAMES, Params
 from presets import PRESETS, get_preset
 from routing import listing, pactl, recover_stale_routes
+from tray import Tray
+from window_preferences import load_preferences, save_preferences
 
 
 def run_gui(initial, output, session_factory, format_meters, preset_key='general'):
@@ -24,6 +26,8 @@ def run_gui(initial, output, session_factory, format_meters, preset_key='general
     for column in (1, 2, 3):
         frame.columnconfigure(column, weight=1)
     session = session_factory()
+    preferences = load_preferences()
+    keep_running = tk.BooleanVar(value=preferences['keep_running'])
 
     def change_theme():
         theme = 'dark' if dark.get() else 'light'
@@ -209,7 +213,41 @@ def run_gui(initial, output, session_factory, format_meters, preset_key='general
     ttk.Button(frame, text='Refresh outputs', command=refresh).grid(
         row=18, column=3, columnspan=2, sticky='e', pady=(12, 0))
 
+    def save_window_behavior():
+        preferences['keep_running'] = keep_running.get()
+        if not save_preferences(preferences):
+            status.set('Window behavior changed for this session; could not save your preference.')
+
+    ttk.Checkbutton(frame, text='Keep running when window is closed',
+                    variable=keep_running, command=save_window_behavior).grid(
+        row=19, column=0, columnspan=4, sticky='w', pady=(12, 0))
+
+    def quit_app():
+        root.destroy()
+
+    ttk.Button(frame, text='Quit', command=quit_app).grid(
+        row=19, column=4, sticky='e', pady=(12, 0))
+
+    tray = Tray()
+
+    def show():
+        root.deiconify()
+        root.lift()
+
     def tick():
+        for action in tray.poll(bool(session.route), bypass.get()):
+            if action == 'quit':
+                quit_app()
+                return
+            if action == 'show':
+                show()
+            elif action == 'toggle':
+                toggle()
+            elif action == 'bypass':
+                bypass.set(not bypass.get())
+        if root.state() == 'withdrawn' and not tray.connected:
+            show()
+            status.set('Tray unavailable. EvenAudio is still running; minimize the window to keep it out of the way.')
         if session.route:
             try:
                 for kind, value in session.poll():
@@ -233,8 +271,21 @@ def run_gui(initial, output, session_factory, format_meters, preset_key='general
         root.after(100, tick)
 
     def close():
-        stop()
-        root.destroy()
+        if not keep_running.get():
+            quit_app()
+            return
+        if not preferences['close_notice_seen']:
+            messagebox.showinfo('EvenAudio keeps running',
+                'Closing this window keeps EvenAudio and any active audio processing running. '
+                'Find it in the tray, or in the taskbar when no tray is available. '
+                'Use Quit to exit and restore normal playback. '
+                'You can change this using “Keep running when window is closed”.', parent=root)
+            preferences['close_notice_seen'] = True
+            save_preferences(preferences)
+        if tray.connected:
+            root.withdraw()
+        else:
+            root.iconify()
 
     try:
         recovered = recover_stale_routes(output)
@@ -248,4 +299,7 @@ def run_gui(initial, output, session_factory, format_meters, preset_key='general
     try:
         root.mainloop()
     finally:
-        session.stop()
+        try:
+            session.stop()
+        finally:
+            tray.close()

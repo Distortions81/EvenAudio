@@ -40,8 +40,28 @@ a temporary “EvenAudio” output, makes it the default, and moves existing pla
 on the selected output into it. Its own processed output is explicitly pinned to
 your speakers/headphones to prevent feedback. Playback on other outputs is left
 alone. Some applications pin their own output: select EvenAudio in the desktop
-sound mixer if needed. Stop or close the app to restore playback and remove the
+sound mixer if needed. Stop processing or choose **Quit** to restore playback and remove the
 temporary sink. A GUI bypass control lets you compare with the original signal.
+
+**Keep running when window is closed** is enabled by default. Closing the window
+keeps processing active and hides the controls to the tray. If no tray is connected,
+the window minimizes to the taskbar instead. A one-time notice explains this behavior.
+Disable the checkbox to make closing the window quit. The preference is remembered in
+`$XDG_CONFIG_HOME/evenaudio/window.json` (normally `~/.config/evenaudio/window.json`).
+The window's **Quit** button always exits and restores playback.
+
+The optional tray menu offers **Show EvenAudio**, **Start/Stop processing**,
+**Enable/Disable bypass**, and **Quit**. On Debian/Ubuntu, enable tray support with:
+
+```sh
+sudo apt install python3-gi gir1.2-gtk-3.0 gir1.2-ayatanaappindicator3-0.1
+```
+
+KDE Plasma supports these indicators. GNOME needs the
+[AppIndicator extension](https://extensions.gnome.org/extension/615/appindicator-support/)
+(some distributions include it). Legacy AppIndicator3 is also supported. These
+packages are optional; the Tk interface works without them. If the tray host or
+helper disappears while the window is hidden, EvenAudio shows the window again.
 
 Without a GUI:
 
@@ -195,14 +215,22 @@ make test
 python3 tests/integration_audio.py
 # Optional GUI smoke check (Tk, Xvfb, and ImageMagick required):
 xvfb-run -a python3 tests/integration_audio.py --gui
+# Include window lifecycle tests with a virtual display:
+xvfb-run -a make test
+# Optional real tray protocol check (tray packages, D-Bus, and Xvfb required):
+dbus-run-session -- xvfb-run -a python3 tests/integration_tray.py
 ```
 
 The unit tests cover crossover flatness, stereo linking, 10:1 compression,
 same-sample attack, adjustable release, automatic gain, silence behavior, bypass,
-and restoration rules. The integration script creates its own temporary PulseAudio
+restoration rules, saved window behavior, closing while processing, and recovery
+when the tray disappears. The integration script creates its own temporary PulseAudio
 server and null output, exercises real capture/playback and worker failure, and
 checks cleanup without touching desktop playback. It needs the `pulseaudio`
-executable and permission to create Unix sockets. Synthetic tests do not replace
+executable and permission to create Unix sockets. Its GUI check also verifies that
+closing preserves live routing and Quit restores playback. The tray check runs on
+a private session bus and verifies actual AppIndicator registration, menu commands,
+state updates, and watcher loss/reconnection. Synthetic tests do not replace
 listening tests with real podcasts, music, speakers, and headphones.
 
 ## License

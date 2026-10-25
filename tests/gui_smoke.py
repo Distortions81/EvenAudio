@@ -3,6 +3,7 @@ from pathlib import Path
 import os
 import subprocess
 import tempfile
+from types import SimpleNamespace
 from unittest.mock import patch
 
 
@@ -10,7 +11,7 @@ def check_gui(original):
     import tkinter as tk
     from evenaudio import gui
     from engine import Params
-    from routing import pactl
+    from routing import pactl, listing
     from presets import PRESETS
     from appearance import PALETTES, load_theme
     real_tk = tk.Tk
@@ -33,6 +34,25 @@ def check_gui(original):
 
         def start():
             button('Start processing').invoke()
+
+        def close_processing_window():
+            try:
+                assert pactl('get-default-sink').startswith('evenaudio_')
+                root.tk.call(root.protocol('WM_DELETE_WINDOW'))
+                assert root.state() == 'withdrawn'
+                assert pactl('get-default-sink').startswith('evenaudio_')
+                root.after(300, quit_processing)
+            except Exception as exc:
+                errors.append(exc)
+                root.destroy()
+
+        def quit_processing():
+            try:
+                assert pactl('get-default-sink').startswith('evenaudio_')
+                button('Quit').invoke()
+            except Exception as exc:
+                errors.append(exc)
+                root.destroy()
 
         def inspect():
             try:
@@ -78,9 +98,10 @@ def check_gui(original):
                 button('Start processing')
                 print('PASS: GUI starts audio, shows live state, and restores playback on Stop')
                 print('PASS: four presets, Custom edits, voice explanation, dark/light switch, and saved theme')
+                button('Start processing').invoke()
+                root.after(900, close_processing_window)
             except Exception as exc:
                 errors.append(exc)
-            finally:
                 root.destroy()
 
         root.after(100, start)
@@ -90,6 +111,12 @@ def check_gui(original):
 
     with tempfile.TemporaryDirectory() as config, \
             patch.dict(os.environ, {'XDG_CONFIG_HOME': config}), \
+            patch('interface.Tray', return_value=SimpleNamespace(
+                connected=True, poll=lambda *_: [], close=lambda: None)), \
+            patch('tkinter.messagebox.showinfo'), \
             patch.object(tk, 'Tk', create):
         gui(Params.default(), None)
     assert not errors, errors
+    assert pactl('get-default-sink') == original
+    assert not any(s['name'].startswith('evenaudio_') for s in listing('sinks'))
+    print('PASS: closing the GUI preserves live routing; Quit restores output and removes virtual sinks')
