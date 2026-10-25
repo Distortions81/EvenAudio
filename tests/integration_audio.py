@@ -15,7 +15,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from evenaudio import Session
 from engine import FRAMES, Meters, Params, Pulse
-from routing import listing, pactl
+from routing import Routing, listing, pactl, recover_stale_routes
 
 
 def main():
@@ -51,6 +51,8 @@ def main():
                     break
                 time.sleep(.05)
             assert session.ready, 'Worker did not become ready'
+            created = next(s for s in listing('sinks') if s['name'] == session.route.name)
+            assert str(created.get('properties', {}).get('evenaudio.owner_pid')) == str(os.getpid())
             assert pactl('get-default-sink') == session.route.name
             virtual = session.route.name
             module = session.route.module
@@ -84,6 +86,8 @@ def main():
                        for line in pactl('list', 'short', 'modules').splitlines())
             print(f'PASS: live capture → seven-band DSP → pinned output; peak {maximum:.1f} dBFS')
             print('PASS: default output restored; virtual sink and module removed')
+            player.close()
+            player = None
             # Failed output connection must unwind the virtual sink as well.
             session.start(Params.default())
             pactl('unload-module', session.route.module)
@@ -97,6 +101,19 @@ def main():
             session.stop()
             assert pactl('get-default-sink') == original
             print('PASS: worker failure detected and route restored')
+            owner = Routing()
+            owner.create()
+            assert recover_stale_routes() == [], 'Must not remove a live owner before worker connection'
+            assert not owner.close()
+            orphan = 'evenaudio_orphan_integration'
+            orphan_module = pactl('load-module', 'module-null-sink', 'sink_name=' + orphan)
+            pactl('set-default-sink', orphan)
+            assert recover_stale_routes() == [orphan]
+            assert pactl('get-default-sink') == original
+            assert all(s['name'] != orphan for s in listing('sinks'))
+            print('PASS: orphan routing recovered; live startup owner preserved')
+            from refill_audio import check_refill
+            check_refill(original)
             if '--gui' in sys.argv:
                 from gui_smoke import check_gui
                 check_gui(original)

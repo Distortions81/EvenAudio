@@ -5,6 +5,7 @@ import queue
 
 RATE = 48000
 FRAMES = 480
+PLAYBACK_BUFFER_MS = 80
 BANDS = 7
 DEFAULT_RELEASE_MS = (2000, 1414, 1000, 707, 500, 354, 250)
 BAND_NAMES = ('<80 Hz', '80–200', '200–500', '500–1.25k', '1.25–3.15k', '3.15–8k', '>8 kHz')
@@ -84,7 +85,16 @@ class Pulse:
         # PA_SAMPLE_FLOAT32LE=5, PA_SAMPLE_FLOAT32BE=6; playback=1, record=2.
         spec = SampleSpec(5 if sys.byteorder == 'little' else 6, RATE, 2)
         auto = 0xffffffff
-        attr = BufferAttr(auto, FRAMES * 8 * 3, 0, FRAMES * 8, FRAMES * 8)
+        frame_bytes = 2 * C.sizeof(C.c_float)
+        target_bytes = RATE * frame_bytes * PLAYBACK_BUFFER_MS // 1000
+        if record:
+            # Bound queued capture to half a second after a scheduling stall.
+            attr = BufferAttr(RATE * frame_bytes // 2, auto, auto, auto, FRAMES * frame_bytes)
+        else:
+            # A zero prebuf disables automatic underrun recovery. Let the server
+            # pause/re-prime to tlength instead of running an empty stream.
+            attr = BufferAttr(target_bytes * 2, target_bytes, auto,
+                              FRAMES * frame_bytes * 2, auto)
         error = C.c_int()
         self.ptr = self.lib.pa_simple_new(None, b'EvenAudio', 2 if record else 1,
             device.encode(), b'EvenAudio capture' if record else b'EvenAudio output',

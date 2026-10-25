@@ -7,6 +7,9 @@ audio routing. No pip packages, lookahead buffer, or separate peak limiter.
 
 ![EvenAudio interface](preview.png)
 
+The interface starts in dark mode. Use the **Dark mode** switch to select light
+mode; this preference is remembered for the next launch. [Light-mode preview](preview-light.png).
+
 ## Run
 
 On Debian/Ubuntu, install the build and runtime dependencies:
@@ -45,14 +48,42 @@ Without a GUI:
 ```sh
 python3 evenaudio.py --list-outputs
 python3 evenaudio.py --headless
-python3 evenaudio.py --headless --auto-level  # Optional leveling for uneven podcasts
+python3 evenaudio.py --headless --preset gentle-music
+python3 evenaudio.py --headless --preset uneven-voices
 ```
 
 Use `--output SINK_NAME` to choose an output. Broadband automatic leveling is
 off by default for music; use `--auto-level` for uneven speech, or enable it in
 the GUI. Without `--release`, each band uses the default below; an explicit
 `--release 100` overrides all seven bands to 100 ms. Ctrl+C and SIGTERM restore
-the routing. Settings are session-only.
+the routing. Audio settings are session-only; appearance is saved in
+`$XDG_CONFIG_HOME/evenaudio/appearance.json` (normally
+`~/.config/evenaudio/appearance.json`).
+
+## Presets and voice leveling
+
+The preset menu replaces all audio controls with editable starting values. You
+can switch while processing; manual adjustments show **Custom**. Bypass stays
+as selected. The application always opens on General purpose unless you pass
+`--preset`; explicit CLI options override that preset.
+
+| Preset | Intended use | Ratio | Threshold | Bass → treble release | Voice leveling |
+|---|---|---:|---:|---|---|
+| General purpose | Original strong, steady leveling | 10:1 | −24 dBFS | 2,000 → 250 ms | Off |
+| Gentle music | Lighter compression, more dynamics | 3:1 | −18 dBFS | 2,000 → 250 ms | Off |
+| Steady music | Stronger leveling, longer recovery | 10:1 | −28 dBFS | 3,000 → 500 ms | Off |
+| Uneven voices | Podcasts/calls with differing voice levels | 10:1 | −24 dBFS | 1,000 → 200 ms | On |
+
+These are proposed presets for listening and tuning, not professionally mastered
+profiles or a guarantee against pumping. General purpose retains the original
+logarithmic release curve; the other release curves also use geometric spacing.
+
+**Level uneven voices (podcasts/calls)** raises quiet passages and lowers loud
+ones by following overall volume. It does not identify individual speakers or
+separate overlapping voices. It is useful when podcast or call voices differ in
+volume; because it affects the whole mix, it can also make music swell or duck.
+Usually leave it off for music. Its target, boost limit, and time controls are
+disabled while it is off. The seven-band compressor remains active with it off.
 
 ## Starting settings
 
@@ -134,13 +165,20 @@ output gain → selected output.
   in each compressor, but 10:1 still permits peaks above its threshold. Summing
   seven bands can also exceed 0 dBFS. The output meter warns when this happens;
   reduce output gain or lower thresholds. This is not a true-peak guarantee.
-- Audio is stereo float32 at 48 kHz, in 10 ms chunks. Server, device, crossover,
+- Audio is stereo float32 at 48 kHz, in 10 ms chunks. Playback requests an 80 ms
+  target buffer, a 160 ms maximum, and 20 ms minimum requests. Automatic
+  prebuffering pauses and refills the stream after an underrun; capture buffering
+  is capped at half a second to bound backlog after a long scheduling stall.
+  Server, device, crossover,
   and buffering latency still apply. “Instant” describes gain attack, not
   end-to-end playback latency. Bluetooth adds its normal transport latency.
 - Output hot-plugging/reconnection and autostart are not implemented. Stop, refresh
   outputs, and start again after changing devices. An audio error stops processing
   and restores routing.
-- A forced kill or power loss cannot execute cleanup. To recover manually, run
+- A forced kill or power loss cannot execute cleanup. On startup, the app attempts
+  to restore playback and remove orphaned EvenAudio sinks. Recovery leaves sinks
+  alone when an EvenAudio playback worker or their owner process is still alive.
+  If manual recovery is needed, run
   `pactl list short sinks`, set your real output with
   `pactl set-default-sink YOUR_SINK`, inspect `pactl list short modules`, and unload
   only the `module-null-sink` whose arguments contain the matching

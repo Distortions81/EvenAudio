@@ -29,3 +29,28 @@ class StartupTests(unittest.TestCase):
                     patch.object(evenaudio.signal, 'signal'):
                 self.assertEqual(evenaudio.main(), 0)
                 self.assertEqual(gui.call_args.args[0].auto_level, expected)
+
+    def test_voice_preset_and_explicit_overrides(self):
+        with patch.object(sys, 'argv', ['evenaudio.py', '--preset', 'uneven-voices',
+                                      '--no-auto-level', '--release', '1800', '--gain', '2']), \
+                patch.object(evenaudio, 'gui') as gui, \
+                patch.object(evenaudio.signal, 'signal'):
+            self.assertEqual(evenaudio.main(), 0)
+            p = gui.call_args.args[0]
+            self.assertEqual(p.auto_level, 0)
+            self.assertEqual(p.output_db, 2)
+            self.assertEqual(list(p.release_ms), [1800] * 7)
+        with patch.object(sys, 'argv', ['evenaudio.py', '--preset', 'uneven-voices']), \
+                patch.object(evenaudio, 'gui') as gui, \
+                patch.object(evenaudio.signal, 'signal'):
+            self.assertEqual(evenaudio.main(), 0)
+            self.assertEqual(gui.call_args.args[0].auto_level, 1)
+
+    def test_gentle_preset_is_not_overwritten_by_cli_defaults(self):
+        with patch.object(sys, 'argv', ['evenaudio.py', '--preset', 'gentle-music']), \
+                patch.object(evenaudio, 'gui') as gui, \
+                patch.object(evenaudio.signal, 'signal'):
+            self.assertEqual(evenaudio.main(), 0)
+            p = gui.call_args.args[0]
+            self.assertEqual(list(p.ratio), [3] * 7)
+            self.assertEqual(p.output_db, 3)

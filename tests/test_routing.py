@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from routing import Routing
+from routing import Routing, recover_stale_routes
 
 
 class RoutingTests(unittest.TestCase):
@@ -71,3 +71,34 @@ class RoutingTests(unittest.TestCase):
         self.sinks.append({'index': 3, 'name': 'evenaudio_other'})
         with self.assertRaisesRegex(RuntimeError, 'Choose speakers'):
             Routing('evenaudio_other')
+
+    def test_recover_orphaned_virtual_sink_without_a_worker(self):
+        self.sinks.append({'index': 3, 'name': 'evenaudio_orphan'})
+        self.default = 'evenaudio_orphan'
+        self.streams = [{'index': 20, 'sink': 3, 'properties': {}}]
+        original_command = self.command
+
+        def command(*args):
+            if args == ('list', 'short', 'modules'):
+                return '536870913\tmodule-null-sink\tsink_name=evenaudio_orphan rate=48000\t'
+            return original_command(*args)
+
+        with patch('routing.pactl', side_effect=command):
+            self.assertEqual(recover_stale_routes('speakers'), ['evenaudio_orphan'])
+        self.assertEqual(self.default, 'speakers')
+        self.assertIn(('move-sink-input', '20', 'speakers'), self.calls)
+        self.assertIn(('unload-module', '536870913'), self.calls)
+
+    def test_recovery_leaves_a_running_worker_alone(self):
+        self.sinks.append({'index': 3, 'name': 'evenaudio_active'})
+        self.streams = [{'index': 12, 'sink': 1, 'properties': {
+            'application.name': 'EvenAudio', 'media.name': 'EvenAudio output'}}]
+        self.assertEqual(recover_stale_routes(), [])
+        self.assertEqual(self.calls, [])
+
+    def test_recovery_leaves_a_live_owner_alone_before_worker_connects(self):
+        self.sinks.append({'index': 3, 'name': 'evenaudio_starting',
+                           'properties': {'evenaudio.owner_pid': '1234'}})
+        with patch('routing.os.kill'):
+            self.assertEqual(recover_stale_routes(), [])
+        self.assertEqual(self.calls, [])
