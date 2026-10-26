@@ -61,9 +61,12 @@ def check_gui(original):
                 chooser = next(w for w in widgets if w.winfo_name() == 'preset')
                 voice = next(w for w in widgets if w.winfo_class() == 'TCheckbutton'
                              and str(w.cget('text')).startswith('Level uneven voices'))
+                ratio = next(w for w in widgets if w.winfo_name() == 'ratio')
+                assert float(ratio.get()) == 4
                 for recipe in PRESETS.values():
                     chooser.set(recipe.label)
                     chooser.event_generate('<<ComboboxSelected>>')
+                    assert float(ratio.get()) == recipe.ratio
                     for band, release in enumerate(recipe.releases):
                         spin = next(w for w in widgets if w.winfo_name() == f'release_{band}')
                         assert float(spin.get()) == release

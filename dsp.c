@@ -7,8 +7,8 @@
 #define BANDS 7
 #define PI 3.14159265358979323846
 typedef struct {
-    float threshold[BANDS], ratio[BANDS], release_ms[BANDS];
-    float output_db, auto_level, target_db, max_boost_db, level_ms, bypass;
+    float threshold[BANDS], release_ms[BANDS];
+    float ratio, output_db, auto_level, target_db, max_boost_db, level_ms, bypass;
 } Params;
 typedef struct {
     float input_db, output_db, auto_db, reduction[BANDS];
@@ -56,13 +56,14 @@ void *ea_create(double rate) {
     return s;
 }
 void ea_destroy(void *ptr) { free(ptr); }
+size_t ea_params_size(void) { return sizeof(Params); }
 void ea_process(void *ptr,float *audio,size_t frames,const Params *p,Meters *m) {
     DSP *s=ptr; double inpeak=0,outpeak=0,gr[BANDS]={0};
-    double release[BANDS],threshold[BANDS],slope[BANDS];
+    double release[BANDS],threshold[BANDS];
+    double slope=1-1/clamp(p->ratio,1,1000);
     for(int b=0;b<BANDS;b++) {
         release[b]=exp(-1/(s->rate*clamp(p->release_ms[b],10,5000)*.001));
         threshold[b]=clamp(p->threshold[b],-60,0);
-        slope[b]=1-1/clamp(p->ratio[b],1,1000);
     }
     double rms_c=exp(-1/(s->rate*.25));
     double level_c=exp(-1/(s->rate*clamp(p->level_ms,100,10000)*.001));
@@ -101,8 +102,8 @@ void ea_process(void *ptr,float *audio,size_t frames,const Params *p,Meters *m) 
             double peak=fmax(fabs(bands[b][0]),fabs(bands[b][1]));
             double over=db(peak)-threshold[b], knee=6, reduction;
             if(over<=-knee/2) reduction=0;
-            else if(over>=knee/2) reduction=over*slope[b];
-            else reduction=(over+knee/2)*(over+knee/2)*slope[b]/(2*knee);
+            else if(over>=knee/2) reduction=over*slope;
+            else reduction=(over+knee/2)*(over+knee/2)*slope/(2*knee);
             double target=-reduction;
             /* Apply any additional reduction to this very sample. */
             if(target<s->gain[b]) s->gain[b]=target;

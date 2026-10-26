@@ -58,6 +58,7 @@ class WindowTests(unittest.TestCase):
             def update(self, params):
                 self.updates += 1
                 self.bypassed = bool(params.bypass)
+                self.params = params
 
         class Tray:
             connected = True
@@ -177,4 +178,41 @@ class WindowTests(unittest.TestCase):
             close()
             tray.actions = ['quit']
             root.mainloop()
+        self.exercise(scenario)
+
+    def test_shared_ratio_live_edits_and_presets(self):
+        from presets import PRESETS
+
+        def scenario(root, close, setting, quit_button, session, tray):
+            frame = root.winfo_children()[0]
+            chooser = frame.nametowidget('preset')
+            ratio = frame.nametowidget('ratio')
+            self.assertFalse(any(w.winfo_name().startswith('ratio_')
+                                 for w in frame.winfo_children()))
+            self.assertEqual(float(ratio.get()), 4)
+
+            def tick():
+                root.after(130, root.quit)
+                root.mainloop()
+
+            def edit(value):
+                root.setvar(ratio.cget('textvariable'), value)
+                tick()
+
+            edit('2.5')
+            self.assertEqual(chooser.get(), 'Custom')
+            self.assertEqual(session.params.ratio, 2.5)
+            for invalid in ('', 'nan', 'inf', '0', '1001'):
+                edit(invalid)
+                self.assertEqual(session.params.ratio, 2.5)
+            for recipe in PRESETS.values():
+                chooser.set(recipe.label)
+                chooser.event_generate('<<ComboboxSelected>>')
+                tick()
+                self.assertEqual(float(ratio.get()), recipe.ratio)
+                self.assertEqual(session.params.ratio, recipe.ratio)
+                self.assertEqual(chooser.get(), recipe.label)
+                self.assertEqual(list(session.params.threshold), [recipe.threshold] * 7)
+                self.assertEqual(list(session.params.release_ms), list(recipe.releases))
+
         self.exercise(scenario)

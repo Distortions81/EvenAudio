@@ -112,7 +112,8 @@ def main():
     parser.add_argument('--output', help='Output sink name (default: current default sink)')
     parser.add_argument('--preset', choices=PRESETS, default='general',
                         help='Starting settings (default: general)')
-    parser.add_argument('--ratio', type=float, default=None, help='Override all-band ratio, 1…1000')
+    parser.add_argument('--ratio', type=float, default=None,
+                        help='Shared compression ratio for all bands, 1…1000 (general preset: 4)')
     parser.add_argument('--release', type=float, default=None,
                         help='Override all band releases in ms, 10…5000 '
                              '(otherwise uses the selected preset curve)')
@@ -140,9 +141,9 @@ def main():
                 print(s['name'] + '\t' + s.get('description', ''))
             return 0
         p = get_preset(args.preset)
+        if args.ratio is not None:
+            p.ratio = args.ratio
         for b in range(7):
-            if args.ratio is not None:
-                p.ratio[b] = args.ratio
             if args.threshold is not None:
                 p.threshold[b] = args.threshold
             if args.release is not None:

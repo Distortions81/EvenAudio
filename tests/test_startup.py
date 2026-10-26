@@ -8,6 +8,20 @@ import evenaudio
 
 
 class StartupTests(unittest.TestCase):
+    def test_shared_ratio_default_and_cli_override(self):
+        for arguments, expected in (([], 4), (['--ratio', '2.5'], 2.5),
+                                    (['--preset', 'steady-music', '--ratio', '4'], 4)):
+            with self.subTest(arguments=arguments), \
+                    patch.object(sys, 'argv', ['evenaudio.py', *arguments]), \
+                    patch.object(evenaudio, 'gui') as gui, \
+                    patch.object(evenaudio.signal, 'signal'):
+                self.assertEqual(evenaudio.main(), 0)
+                p = gui.call_args.args[0]
+                self.assertEqual(p.ratio, expected)
+                if not arguments:
+                    self.assertEqual(list(p.threshold), [-18] * 7)
+                    self.assertEqual(p.output_db, 0)
+
     def launch(self, *args):
         with patch.object(sys, 'argv', ['evenaudio.py', *args]), \
                 patch.object(evenaudio, 'gui') as gui, \
@@ -52,5 +66,5 @@ class StartupTests(unittest.TestCase):
                 patch.object(evenaudio.signal, 'signal'):
             self.assertEqual(evenaudio.main(), 0)
             p = gui.call_args.args[0]
-            self.assertEqual(list(p.ratio), [3] * 7)
+            self.assertEqual(p.ratio, 3)
             self.assertEqual(p.output_db, 3)

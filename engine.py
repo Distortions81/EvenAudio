@@ -8,20 +8,24 @@ FRAMES = 480
 PLAYBACK_BUFFER_MS = 80
 BANDS = 7
 DEFAULT_RELEASE_MS = (2000, 1414, 1000, 707, 500, 354, 250)
+DEFAULT_THRESHOLD_DB = -18
+DEFAULT_RATIO = 4
+DEFAULT_OUTPUT_DB = 0
 BAND_NAMES = ('<80 Hz', '80–200', '200–500', '500–1.25k', '1.25–3.15k', '3.15–8k', '>8 kHz')
 
 
 class Params(C.Structure):
-    _fields_ = [(n, C.c_float * BANDS) for n in ('threshold', 'ratio', 'release_ms')] + [
-        (n, C.c_float) for n in ('output_db', 'auto_level', 'target_db',
+    _fields_ = [(n, C.c_float * BANDS) for n in ('threshold', 'release_ms')] + [
+        (n, C.c_float) for n in ('ratio', 'output_db', 'auto_level', 'target_db',
                                 'max_boost_db', 'level_ms', 'bypass')]
 
     @classmethod
     def default(cls):
         p = cls()
         for b in range(BANDS):
-            p.threshold[b], p.ratio[b], p.release_ms[b] = -24, 10, DEFAULT_RELEASE_MS[b]
-        p.output_db = 6
+            p.threshold[b], p.release_ms[b] = DEFAULT_THRESHOLD_DB, DEFAULT_RELEASE_MS[b]
+        p.ratio = DEFAULT_RATIO
+        p.output_db = DEFAULT_OUTPUT_DB
         p.auto_level, p.target_db, p.max_boost_db, p.level_ms = 0, -18, 18, 1500
         return p
 
@@ -37,6 +41,13 @@ class DSP:
         if not path.exists():
             raise RuntimeError('DSP library missing. Run make first.')
         self.lib = C.CDLL(str(path))
+        size = getattr(self.lib, 'ea_params_size', None)
+        if size is None:
+            raise RuntimeError('DSP library is out of date. Run make first.')
+        size.argtypes = []
+        size.restype = C.c_size_t
+        if size() != C.sizeof(Params):
+            raise RuntimeError('DSP library is out of date. Run make first.')
         self.lib.ea_create.argtypes = [C.c_double]
         self.lib.ea_create.restype = C.c_void_p
         self.lib.ea_destroy.argtypes = [C.c_void_p]

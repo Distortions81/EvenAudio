@@ -5,11 +5,14 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from engine import DSP
+from engine import DSP, Params
 from presets import PRESETS, get_preset
 
 
 class PresetTests(unittest.TestCase):
+    def test_general_and_engine_defaults_agree(self):
+        self.assertEqual(bytes(get_preset('general')), bytes(Params.default()))
+
     def test_recipes_process_finite_audio_and_have_slow_music_bass(self):
         for key in PRESETS:
             with self.subTest(preset=key):

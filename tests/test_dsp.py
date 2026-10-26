@@ -3,6 +3,8 @@ import math
 from pathlib import Path
 import sys
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from engine import DSP, Params, RATE, FRAMES
@@ -33,8 +35,7 @@ class DSPTests(unittest.TestCase):
         self.dsp.close()
 
     def test_unity_crossover_response_across_spectrum(self):
-        for b in range(7):
-            self.p.ratio[b] = 1
+        self.p.ratio = 1
         for frequency in (35, 80, 125, 200, 350, 500, 900, 1250, 2000, 3150, 5000, 8000, 14000):
             with self.subTest(frequency=frequency):
                 signal = tone(frequency, .1, .3)
@@ -48,6 +49,7 @@ class DSPTests(unittest.TestCase):
         self.assertAlmostEqual(rms(signal, 5000, 1) / rms(signal, 5000, 0), .25, places=6)
 
     def test_ten_to_one_reduces_twenty_db_level_difference(self):
+        self.p.ratio = 10
         def measure(amplitude):
             processor = DSP()
             try:
@@ -69,8 +71,8 @@ class DSPTests(unittest.TestCase):
             dry = (C.c_float * 2)(1, 1)
             wet = (C.c_float * 2)(1, 1)
             p = Params.from_buffer_copy(bytes(self.p))
+            p.ratio = 1
             for b in range(7):
-                p.ratio[b] = 1
                 self.p.threshold[b] = -40
             unity.process(dry, p)
             self.dsp.process(wet, self.p)
@@ -127,7 +129,9 @@ class DSPTests(unittest.TestCase):
                 processor.close()
         fast = movement(120)
         slow = movement(Params.default().release_ms[0])
-        self.assertGreater(fast, 2.5)
+        # The gentler default produces less reduction overall, but fast release
+        # must still exhibit measurable movement for this comparison to matter.
+        self.assertGreater(fast, 1)
         self.assertLess(slow, fast * .6)
 
     def test_silence_does_not_increase_auto_gain(self):
@@ -156,6 +160,49 @@ class DSPTests(unittest.TestCase):
         signal = (C.c_float * 6)(float('nan'), float('inf'), 0, 0, .1, .1)
         self.dsp.process(signal, self.p)
         self.assertTrue(all(math.isfinite(x) for x in signal))
+
+    def test_shared_ratio_controls_compression_across_spectrum(self):
+        # Check the audible transfer curve in every band, including crossover
+        # leakage: the shared 4:1 setting must retain more variation than 10:1.
+        def level_difference(frequency, ratio):
+            levels = []
+            for amplitude in (.08, .8):
+                p = Params.default()
+                p.ratio = ratio
+                for b in range(7):
+                    p.threshold[b] = -45
+                processor = DSP()
+                try:
+                    signal = tone(frequency, amplitude, .6)
+                    processor.process(signal, p)
+                    levels.append(rms(signal, RATE // 3))
+                finally:
+                    processor.close()
+            return 20 * math.log10(levels[1] / levels[0])
+
+        for frequency in (35, 125, 315, 800, 2000, 5000, 14000):
+            with self.subTest(frequency=frequency):
+                unity = level_difference(frequency, 1)
+                natural = level_difference(frequency, 4)
+                strong = level_difference(frequency, 10)
+                self.assertAlmostEqual(unity, 20, places=4)
+                self.assertGreater(natural, 4)
+                self.assertLess(natural, 9)
+                self.assertGreater(natural - strong, 1.5)
+
+    def test_default_does_not_boost_quiet_audio(self):
+        for frequency in (35, 125, 315, 800, 2000, 5000, 14000):
+            with self.subTest(frequency=frequency):
+                signal = tone(frequency, .04, .3)
+                self.dsp.process(signal, Params.default())
+                error_db = 20 * math.log10(rms(signal, RATE // 5) / (.04 / math.sqrt(2)))
+                self.assertLess(abs(error_db), .08)
+
+    def test_stale_library_is_rejected_before_allocating_dsp(self):
+        for library in (SimpleNamespace(), SimpleNamespace(ea_params_size=Mock(return_value=108))):
+            with self.subTest(library=library), patch('engine.C.CDLL', return_value=library):
+                with self.assertRaisesRegex(RuntimeError, 'out of date.*make'):
+                    DSP()
 
 
 if __name__ == '__main__':

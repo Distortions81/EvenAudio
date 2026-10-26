@@ -1,7 +1,8 @@
 """Editable starting points; each request produces an independent parameter set."""
 from dataclasses import dataclass
 
-from engine import BANDS, DEFAULT_RELEASE_MS, Params
+from engine import (BANDS, DEFAULT_OUTPUT_DB, DEFAULT_RATIO, DEFAULT_RELEASE_MS,
+                    DEFAULT_THRESHOLD_DB, Params)
 
 
 @dataclass(frozen=True)
@@ -18,8 +19,9 @@ class Preset:
 PRESETS = {
     'general': Preset(
         'General purpose',
-        'Strong, steady leveling with the original 10:1 ratio and slow bass recovery. '
-        'Voice leveling is off.', -24, 10, DEFAULT_RELEASE_MS, 6),
+        'Natural sound with gentler 4:1 leveling, slow bass recovery, and no added output gain. '
+        'Voice leveling is off.', DEFAULT_THRESHOLD_DB, DEFAULT_RATIO, DEFAULT_RELEASE_MS,
+        DEFAULT_OUTPUT_DB),
     'gentle-music': Preset(
         'Gentle music',
         'Lighter compression to retain more musical dynamics. Slow releases; voice leveling is off.',
@@ -40,8 +42,8 @@ def get_preset(key='general'):
     p = Params.default()
     for band in range(BANDS):
         p.threshold[band] = recipe.threshold
-        p.ratio[band] = recipe.ratio
         p.release_ms[band] = recipe.releases[band]
+    p.ratio = recipe.ratio
     p.output_db = recipe.output
     p.auto_level = float(recipe.voices)
     return p

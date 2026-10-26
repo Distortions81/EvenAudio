@@ -72,16 +72,24 @@ def run_gui(initial, output, session_factory, format_meters, preset_key='general
     ttk.Label(frame, textvariable=preset_description, style='Muted.TLabel', wraplength=860).grid(
         row=4, column=0, columnspan=5, sticky='w', pady=(4, 0))
 
+    ttk.Label(frame, text='Ratio (:1, all bands)').grid(
+        row=5, column=0, sticky='w', pady=(12, 0))
+    ratio = tk.StringVar(value=f'{initial.ratio:g}')
+    ttk.Spinbox(frame, name='ratio', from_=1, to=1000, increment=.5,
+                textvariable=ratio, width=12).grid(
+                    row=5, column=1, sticky='ew', padx=(0, 14), pady=(12, 0))
+    ttk.Label(frame, text='Lower ratios keep more dynamics.', style='Muted.TLabel').grid(
+        row=5, column=2, columnspan=3, sticky='w', pady=(12, 0))
+
     band_vars, reduction_vars = [], []
-    for column, title in enumerate(('Band', 'Threshold (dBFS)', 'Ratio (:1)', 'Release (ms)', 'Reduction')):
-        ttk.Label(frame, text=title).grid(row=5, column=column, sticky='w', pady=(14, 5))
+    for column, title in enumerate(('Band', 'Threshold (dBFS)', 'Release (ms)', 'Reduction')):
+        ttk.Label(frame, text=title).grid(row=6, column=column, sticky='w', pady=(14, 5))
     for band, name in enumerate(BAND_NAMES):
-        row = 6 + band
+        row = 7 + band
         ttk.Label(frame, text=name).grid(row=row, column=0, sticky='w', padx=(0, 15), pady=3)
         values = []
         for column, (field, value, low, high, step) in enumerate((
             ('threshold', initial.threshold[band], -60, 0, 1),
-            ('ratio', initial.ratio[band], 1, 1000, 1),
             ('release', initial.release_ms[band], 10, 5000, 10)), 1):
             var = tk.StringVar(value=f'{value:g}')
             ttk.Spinbox(frame, name=f'{field}_{band}', from_=low, to=high, increment=step,
@@ -91,24 +99,25 @@ def run_gui(initial, output, session_factory, format_meters, preset_key='general
         band_vars.append(values)
         reduction = tk.StringVar(value='—')
         reduction_vars.append(reduction)
-        ttk.Label(frame, textvariable=reduction, width=12).grid(row=row, column=4, sticky='w')
+        ttk.Label(frame, textvariable=reduction, width=12).grid(
+            row=row, column=3, columnspan=2, sticky='w')
 
     auto = tk.BooleanVar(value=bool(initial.auto_level))
     bypass = tk.BooleanVar(value=False)
     ttk.Checkbutton(frame, text='Level uneven voices (podcasts/calls)', variable=auto).grid(
-        row=13, column=0, columnspan=3, sticky='w', pady=(10, 0))
+        row=14, column=0, columnspan=3, sticky='w', pady=(10, 0))
     ttk.Checkbutton(frame, text='Bypass (compare original)', variable=bypass).grid(
-        row=13, column=3, columnspan=2, sticky='w', pady=(10, 0))
+        row=14, column=3, columnspan=2, sticky='w', pady=(10, 0))
     ttk.Label(frame, style='Muted.TLabel', wraplength=860, text=(
         'Raises quiet passages and lowers loud ones using overall volume; it does not identify speakers.\n'
         'Useful for uneven podcasts or calls. Can make music swell or duck; usually leave off for music.'
-    )).grid(row=14, column=0, columnspan=5, sticky='w', pady=(2, 8))
+    )).grid(row=15, column=0, columnspan=5, sticky='w', pady=(2, 8))
 
     globals_frame = ttk.Frame(frame)
-    globals_frame.grid(row=15, column=0, columnspan=5, sticky='ew')
+    globals_frame.grid(row=16, column=0, columnspan=5, sticky='ew')
     globals_frame.columnconfigure(0, weight=1)
     globals_frame.columnconfigure(2, weight=1)
-    globals_vars, voice_fields = {}, []
+    globals_vars, voice_fields = {'ratio': (ratio, 1, 1000)}, []
     for index, (name, label, value, low, high, step) in enumerate((
         ('output_db', 'Output gain (dB)', initial.output_db, -24, 18, 1),
         ('target_db', 'Voice level target (RMS dBFS)', initial.target_db, -36, -10, 1),
@@ -125,15 +134,15 @@ def run_gui(initial, output, session_factory, format_meters, preset_key='general
         if name != 'output_db':
             voice_fields.append(entry)
 
-    ttk.Label(frame, textvariable=meters).grid(row=16, column=0, columnspan=5, sticky='w', pady=(12, 5))
+    ttk.Label(frame, textvariable=meters).grid(row=17, column=0, columnspan=5, sticky='w', pady=(12, 5))
     ttk.Label(frame, textvariable=status, style='Muted.TLabel', wraplength=860).grid(
-        row=17, column=0, columnspan=5, sticky='w')
+        row=18, column=0, columnspan=5, sticky='w')
 
     def params():
         p = Params.default()
         for band, values in enumerate(band_vars):
-            for name, var, low, high in zip(('threshold', 'ratio', 'release_ms'), values,
-                                          (-60, 1, 10), (0, 1000, 5000)):
+            for name, var, low, high in zip(('threshold', 'release_ms'), values,
+                                          (-60, 10), (0, 5000)):
                 value = float(var.get())
                 if not math.isfinite(value) or not low <= value <= high:
                     raise ValueError(f'{BAND_NAMES[band]} {name} must be {low}…{high}')
@@ -164,7 +173,7 @@ def run_gui(initial, output, session_factory, format_meters, preset_key='general
         try:
             p = get_preset(key)
             for band, values in enumerate(band_vars):
-                for var, name in zip(values, ('threshold', 'ratio', 'release_ms')):
+                for var, name in zip(values, ('threshold', 'release_ms')):
                     var.set(f'{getattr(p, name)[band]:g}')
             for name, (var, _, _) in globals_vars.items():
                 var.set(f'{getattr(p, name):g}')
@@ -209,9 +218,9 @@ def run_gui(initial, output, session_factory, format_meters, preset_key='general
             messagebox.showerror('EvenAudio', str(exc))
 
     button = ttk.Button(frame, text='Start processing', command=toggle)
-    button.grid(row=18, column=0, columnspan=2, sticky='w', pady=(12, 0))
+    button.grid(row=19, column=0, columnspan=2, sticky='w', pady=(12, 0))
     ttk.Button(frame, text='Refresh outputs', command=refresh).grid(
-        row=18, column=3, columnspan=2, sticky='e', pady=(12, 0))
+        row=19, column=3, columnspan=2, sticky='e', pady=(12, 0))
 
     def save_window_behavior():
         preferences['keep_running'] = keep_running.get()
@@ -220,13 +229,13 @@ def run_gui(initial, output, session_factory, format_meters, preset_key='general
 
     ttk.Checkbutton(frame, text='Keep running when window is closed',
                     variable=keep_running, command=save_window_behavior).grid(
-        row=19, column=0, columnspan=4, sticky='w', pady=(12, 0))
+        row=20, column=0, columnspan=4, sticky='w', pady=(12, 0))
 
     def quit_app():
         root.destroy()
 
     ttk.Button(frame, text='Quit', command=quit_app).grid(
-        row=19, column=4, sticky='e', pady=(12, 0))
+        row=20, column=4, sticky='e', pady=(12, 0))
 
     tray = Tray()
 

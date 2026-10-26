@@ -87,12 +87,18 @@ can switch while processing; manual adjustments show **Custom**. Bypass stays
 as selected. The application always opens on General purpose unless you pass
 `--preset`; explicit CLI options override that preset.
 
-| Preset | Intended use | Ratio | Threshold | Bass → treble release | Voice leveling |
-|---|---|---:|---:|---|---|
-| General purpose | Original strong, steady leveling | 10:1 | −24 dBFS | 2,000 → 250 ms | Off |
-| Gentle music | Lighter compression, more dynamics | 3:1 | −18 dBFS | 2,000 → 250 ms | Off |
-| Steady music | Stronger leveling, longer recovery | 10:1 | −28 dBFS | 3,000 → 500 ms | Off |
-| Uneven voices | Podcasts/calls with differing voice levels | 10:1 | −24 dBFS | 1,000 → 200 ms | On |
+**Ratio (:1, all bands)** is one shared control, starting at **4:1**. Thresholds
+and releases remain independently adjustable for each band. The shared ratio
+sets compression strength; each band still measures and reduces its own signal.
+Use `--ratio 4` to set it from the command line; fractional values such as `2.5`
+are supported too.
+
+| Preset | Intended use | Shared ratio | Threshold | Bass → treble release | Output gain | Voice leveling |
+|---|---|---:|---:|---|---:|---|
+| General purpose | Gentler everyday leveling | 4:1 | −18 dBFS | 2,000 → 250 ms | 0 dB | Off |
+| Gentle music | Lighter compression, more dynamics | 3:1 | −18 dBFS | 2,000 → 250 ms | +3 dB | Off |
+| Steady music | Stronger leveling, longer recovery | 10:1 | −28 dBFS | 3,000 → 500 ms | +8 dB | Off |
+| Uneven voices | Podcasts/calls with differing voice levels | 10:1 | −24 dBFS | 1,000 → 200 ms | +6 dB | On |
 
 These are proposed presets for listening and tuning, not professionally mastered
 profiles or a guarantee against pumping. General purpose retains the original
@@ -110,15 +116,21 @@ disabled while it is off. The seven-band compressor remains active with it off.
 These are this prototype's proposed listening defaults, not universal mastering
 settings. In particular, threshold depends on the incoming audio level.
 
-| Band | Threshold | Ratio | Attack | Release |
-|---|---:|---:|---:|---:|
-| Below 80 Hz | −24 dBFS | 10:1 | Instant | 2,000 ms |
-| 80–200 Hz | −24 dBFS | 10:1 | Instant | 1,414 ms |
-| 200–500 Hz | −24 dBFS | 10:1 | Instant | 1,000 ms |
-| 500–1,250 Hz | −24 dBFS | 10:1 | Instant | 707 ms |
-| 1,250–3,150 Hz | −24 dBFS | 10:1 | Instant | 500 ms |
-| 3,150–8,000 Hz | −24 dBFS | 10:1 | Instant | 354 ms |
-| Above 8,000 Hz | −24 dBFS | 10:1 | Instant | 250 ms |
+The shared ratio is **4:1**, output gain is **0 dB**, and voice leveling is off.
+Compared with the earlier 10:1 / −24 dBFS / +6 dB default, this starts compression
+at a higher level, retains more level variation above threshold, and avoids
+automatically boosting quiet audio. It is a starting point for natural sound;
+listening with your own material is still needed.
+
+| Band | Threshold | Attack | Release |
+|---|---:|---:|---:|
+| Below 80 Hz | −18 dBFS | Instant | 2,000 ms |
+| 80–200 Hz | −18 dBFS | Instant | 1,414 ms |
+| 200–500 Hz | −18 dBFS | Instant | 1,000 ms |
+| 500–1,250 Hz | −18 dBFS | Instant | 707 ms |
+| 1,250–3,150 Hz | −18 dBFS | Instant | 500 ms |
+| 3,150–8,000 Hz | −18 dBFS | Instant | 354 ms |
+| Above 8,000 Hz | −18 dBFS | Instant | 250 ms |
 
 The release values form a geometric progression: `2000 × (1/8)^(band/6)` ms,
 rounded to whole milliseconds. The slow bass recovery is intended to keep gain
@@ -147,7 +159,7 @@ all bands together. It is off by default to preserve independent music dynamics.
 Long release still has a tradeoff: audio after an isolated loud event can remain
 attenuated. Listening tests across different music remain necessary.
 
-Output gain starts at +6 dB. When enabled, automatic leveling targets −18 dBFS short-term RMS,
+Output gain starts at 0 dB. When enabled, automatic leveling targets −18 dBFS short-term RMS,
 with up to +18 dB of boost and a 1.5-second adjustment time. It measures stereo
 power over roughly 250 ms before compression. Gain freezes during pauses below
 −50 dBFS; it does not identify speakers, separate overlapping voices, remove room
@@ -161,9 +173,9 @@ you hear modulation or distortion. Release is an exponential time constant in
 gain dB, not a promise that gain fully recovers in that interval. Ratios range
 from 1:1 to 1,000:1. A 6 dB soft knee smooths the transition into compression.
 
-Ten-to-one is strong compression, and instant attack can change transients or
-produce audible distortion. These choices follow the intended leveling behavior
-and remain adjustable (attack is fixed at zero).
+The default 4:1 ratio is gentler than the 10:1 Steady music and Uneven voices
+presets. Instant attack can still change transients or produce audible distortion.
+The shared ratio remains adjustable; attack is fixed at zero.
 [RØDE's compression guide](https://help.rode.com/hc/en-us/articles/17366565342863-How-to-Use-R%C3%98DE-Audio-Processing-Controls)
 describes the tradeoffs of high ratios and fast attack/release.
 [FFmpeg's dynamic normalization documentation](https://ffmpeg.org/ffmpeg-filters.html#dynaudnorm)
@@ -182,7 +194,7 @@ output gain → selected output.
   gain reduction to the **same sample**. Release smooths recovery. Controls run
   outside the audio sample loop; output gain and bypass changes fade over 20 ms.
 - **No final limiter or hard clipper.** Instant attack eliminates attack overshoot
-  in each compressor, but 10:1 still permits peaks above its threshold. Summing
+  in each compressor, but finite ratios still permit peaks above threshold. Summing
   seven bands can also exceed 0 dBFS. The output meter warns when this happens;
   reduce output gain or lower thresholds. This is not a true-peak guarantee.
 - Audio is stereo float32 at 48 kHz, in 10 ms chunks. Playback requests an 80 ms
@@ -221,8 +233,9 @@ xvfb-run -a make test
 dbus-run-session -- xvfb-run -a python3 tests/integration_tray.py
 ```
 
-The unit tests cover crossover flatness, stereo linking, 10:1 compression,
+The unit tests cover crossover flatness, stereo linking, shared 4:1 and 10:1 compression,
 same-sample attack, adjustable release, automatic gain, silence behavior, bypass,
+unboosted quiet audio at the default settings, live ratio edits and presets,
 restoration rules, saved window behavior, closing while processing, and recovery
 when the tray disappears. The integration script creates its own temporary PulseAudio
 server and null output, exercises real capture/playback and worker failure, and
